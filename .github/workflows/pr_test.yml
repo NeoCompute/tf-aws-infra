@@ -1,4 +1,4 @@
-name: Terraform Checks
+name: Terraform CI
 
 on:
   pull_request:
@@ -7,24 +7,28 @@ on:
 
 jobs:
   terraform:
-    name: Run Terraform fmt and validate
+    name: Terraform Format and Validate
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout the code from the pull request
+      # Step 1: Checkout the repository code
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # Set up Terraform
-      - name: Set up Terraform
+      # Step 2: Set up Terraform
+      - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
-          terraform_version: 1.5.0
+          terraform_version: "1.9.7"
 
-      # Run `terraform fmt` to auto-format the files
-      - name: Terraform Format Check and Auto-fix
-        run: terraform fmt -recursive
+      # Step 3: Initialize Terraform (optional but recommended)
+      - name: Terraform Init
+        run: terraform init
 
-      # Run `terraform validate` to validate the configuration
+      # Step 4: Check Terraform formatting
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      # Step 5: Validate Terraform configuration
       - name: Terraform Validate
         run: terraform validate
