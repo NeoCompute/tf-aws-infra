@@ -19,7 +19,8 @@ resource "aws_internet_gateway" "ig-01" {
   }
 }
 
-# Public Subnets in 3 Availability Zones
+# Public Subnets in 3 Availability Zones 
+# Updates
 resource "aws_subnet" "public_subnets" {
   count                   = length(var.public_subnet_cidrs)
   vpc_id                  = aws_vpc.vpc-01.id
