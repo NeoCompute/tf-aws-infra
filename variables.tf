@@ -27,6 +27,6 @@ variable "availability_zones" {
 }
 
 variable "aws_profile" {
-    description = "The AWS profile to use for deployment"
-    default     = "default"  
+  description = "The AWS profile to use for deployment"
+  default     = "default"
 }

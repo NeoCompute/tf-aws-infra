@@ -21,9 +21,9 @@ jobs:
         with:
           terraform_version: 1.5.0
 
-      # Run `terraform fmt` to check formatting
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive
+      # Run `terraform fmt` to auto-format the files
+      - name: Terraform Format Check and Auto-fix
+        run: terraform fmt -recursive
 
       # Run `terraform validate` to validate the configuration
       - name: Terraform Validate
