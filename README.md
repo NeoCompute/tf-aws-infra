@@ -14,6 +14,15 @@ My IaaC using Terraform for AWS Cloud Platform for CYSE6225 Network Structures a
 
 1. Add your variables in ./terraform.tfvars
 
+```
+region = 
+vpc_cidr = 
+public_subnet_cidrs = 
+private_subnet_cidrs = 
+availability_zones = 
+aws_profile = 
+```
+
 2. Terraform Initalization
    
 ```
