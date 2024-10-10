@@ -21,7 +21,7 @@ jobs:
         with:
           terraform_version: "1.9.7"
 
-      # Step 3: Initialize Terraform (optional but recommended)
+      # Step 3: Initialize Terraform 
       - name: Terraform Init
         run: terraform init
 
