@@ -21,3 +21,7 @@ output "public_route_table_id" {
 output "private_route_table_id" {
   value = aws_route_table.private_route_table.id
 }
+
+output "instance_public_ip" {
+  value = aws_instance.webapp-instance.public_ip
+}

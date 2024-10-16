@@ -79,5 +79,66 @@ resource "aws_route_table_association" "private_associations" {
   route_table_id = aws_route_table.private_route_table.id
 }
 
+# Security Group for EC2 instance
+resource "aws_security_group" "application-security-group" {
+  vpc_id = aws_vpc.vpc-01.id
 
-# Testing Workflow
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = var.application_port
+    to_port     = var.application_port
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "application-security-group"
+  }
+}
+
+# EC2 instance using custom AMI
+resource "aws_instance" "webapp-instance" {
+  ami           = var.custom_ami
+  instance_type = var.instance_type
+  subnet_id     = aws_subnet.public_subnets[0].id
+  key_name      = var.key_name
+
+  vpc_security_group_ids = [aws_security_group.application-security-group.id]
+
+  root_block_device {
+    volume_type           = "gp2"
+    volume_size           = var.root_volume_size
+    delete_on_termination = true
+  }
+
+  tags = {
+    Name = "webapp-instance"
+  }
+}
