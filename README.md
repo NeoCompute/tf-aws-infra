@@ -21,6 +21,11 @@ public_subnet_cidrs =
 private_subnet_cidrs = 
 availability_zones = 
 aws_profile = 
+custom_ami =
+key_name =
+instance_type =
+root_volume_size =
+application_port = 
 ```
 
 2. Terraform Initalization
