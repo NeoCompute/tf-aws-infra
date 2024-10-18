@@ -52,3 +52,21 @@ variable "key_name" {
   type        = string
   default     = ""
 }
+
+variable "db_password" {
+  description = "Password for the database"
+  type        = string
+  default     = "password"
+}
+
+variable "db_name" {
+  description = "Name of the database"
+  type        = string
+  default     = "clouddb"
+}
+
+variable "db_username" {
+  description = "Username for the database"
+  type        = string
+  default     = "csye6225"
+}

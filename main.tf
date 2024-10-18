@@ -123,12 +123,78 @@ resource "aws_security_group" "application-security-group" {
   }
 }
 
+# Security Group for DB 
+resource "aws_security_group" "database-security-group" {
+  vpc_id = aws_vpc.vpc-01.id
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.application-security-group.id]
+  } # allowing incoming connection from EC2 instance security group
+
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "database-security-group"
+  }
+}
+
+# DB Parameter Group for DB
+resource "aws_db_parameter_group" "postgresql_parameter_group" {
+  name        = "csye6225-postgresql-params"
+  family      = "postgres16"
+  description = "DB Parameter Group for webapp"
+
+  tags = {
+    Name = "csye6225-postgresql-params"
+  }
+}
+
+# DB Subnet Group (use private subnets)
+resource "aws_db_subnet_group" "db_subnet_group" {
+  name       = "csye6225-db-subnet-group"
+  subnet_ids = aws_subnet.private_subnets[*].id # Using private subnets for RDS instance
+
+  tags = {
+    Name = "csye6225-db-subnet-group"
+  }
+}
+
+# RDS Instance
+resource "aws_db_instance" "rds_instance" {
+  allocated_storage      = 20
+  instance_class         = "db.t4g.micro"
+  engine                 = "postgres"
+  engine_version         = "16.1"
+  identifier             = "csye6225"
+  username               = "csye6225"
+  password               = var.db_password
+  parameter_group_name   = aws_db_parameter_group.postgresql_parameter_group.name
+  skip_final_snapshot    = true
+  publicly_accessible    = false
+  vpc_security_group_ids = [aws_security_group.database-security-group.id]
+  db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name # Using DB Subnet Group
+  multi_az               = false
+
+  tags = {
+    Name = "csye6225"
+  }
+}
+
 # EC2 instance using custom AMI
 resource "aws_instance" "webapp-instance" {
   ami           = var.custom_ami
   instance_type = var.instance_type
   subnet_id     = aws_subnet.public_subnets[0].id
   key_name      = var.key_name
+  depends_on    = [aws_db_instance.rds_instance]
 
   vpc_security_group_ids = [aws_security_group.application-security-group.id]
 
@@ -138,6 +204,49 @@ resource "aws_instance" "webapp-instance" {
     delete_on_termination = true
   }
 
+  # user_data = templatefile("./scripts/user_data_script.sh", {
+  #   DB_HOST     = aws_db_instance.rds_instance.endpoint
+  #   DB_USER     = var.db_username
+  #   DB_PASSWORD = var.db_password
+  #   DB_NAME     = var.db_name
+  # })
+
+  user_data = <<-EOF
+    #!/bin/bash
+
+    # Enable logging to a file for troubleshooting
+    exec > /tmp/update_env.log 2>&1
+    set -e
+
+    echo "Waiting for RDS instance to be ready..."
+
+    # Retry until RDS is accessible
+    while ! nc -z ${aws_db_instance.rds_instance.endpoint} 5432; do
+      echo "Waiting for RDS to be accessible..."
+      sleep 10
+    done
+
+    echo "RDS is now accessible."
+
+    # Ensure the .env file has the correct owner and permissions before writing
+    sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
+    sudo chmod 600 /home/csye6225/webapp/.env
+
+    # Update or append environment variables
+    sudo -u csye6225 bash -c "sed -i '/^DB_HOST=/d' /home/csye6225/webapp/.env && echo \"DB_HOST=${aws_db_instance.rds_instance.endpoint}\" >> /home/csye6225/webapp/.env"
+    sudo -u csye6225 bash -c "sed -i '/^DB_USER=/d' /home/csye6225/webapp/.env && echo \"DB_USER=${var.db_username}\" >> /home/csye6225/webapp/.env"
+    sudo -u csye6225 bash -c "sed -i '/^DB_PASSWORD=/d' /home/csye6225/webapp/.env && echo \"DB_PASSWORD=${var.db_password}\" >> /home/csye6225/webapp/.env"
+    sudo -u csye6225 bash -c "sed -i '/^DB_DATABASE=/d' /home/csye6225/webapp/.env && echo \"DB_DATABASE=${var.db_name}\" >> /home/csye6225/webapp/.env"
+    sudo -u csye6225 bash -c "sed -i '/^DB_PORT=/d' /home/csye6225/webapp/.env && echo \"DB_PORT=5432\" >> /home/csye6225/webapp/.env"
+
+    # Ensure the .env file has the correct owner and permissions after writing
+    sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
+    sudo chmod 600 /home/csye6225/webapp/.env
+
+    # Start the application service
+    sudo systemctl start webapp_service || { echo "Failed to start service"; exit 1; }
+    echo "Web application started."
+  EOF
   tags = {
     Name = "webapp-instance"
   }
