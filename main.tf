@@ -5,7 +5,9 @@ provider "aws" {
 
 # VPC
 resource "aws_vpc" "vpc-01" {
-  cidr_block = var.vpc_cidr
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = true
+  enable_dns_hostnames = true
   tags = {
     Name = "vpc-01"
   }
@@ -123,12 +125,84 @@ resource "aws_security_group" "application-security-group" {
   }
 }
 
+# Security Group for DB 
+resource "aws_security_group" "database-security-group" {
+  vpc_id = aws_vpc.vpc-01.id
+  ingress {
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.application-security-group.id]
+  } # allowing incoming connection from EC2 instance security group
+
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "database-security-group"
+  }
+}
+
+# DB Parameter Group for DB
+resource "aws_db_parameter_group" "postgresql_parameter_group" {
+  name        = "csye6225-postgresql-params"
+  family      = "postgres16"
+  description = "DB Parameter Group for webapp"
+
+  parameter {
+    name  = "rds.force_ssl"
+    value = "0"
+  }
+
+  tags = {
+    Name = "csye6225-postgresql-params"
+  }
+}
+
+# DB Subnet Group (use private subnets)
+resource "aws_db_subnet_group" "db_subnet_group" {
+  name       = "csye6225-db-subnet-group"
+  subnet_ids = aws_subnet.private_subnets[*].id # Using private subnets for RDS instance
+
+  tags = {
+    Name = "csye6225-db-subnet-group"
+  }
+}
+
+# RDS Instance
+resource "aws_db_instance" "rds_instance" {
+  allocated_storage      = 20
+  instance_class         = "db.t4g.micro"
+  engine                 = "postgres"
+  engine_version         = "16.1"
+  identifier             = "csye6225"
+  db_name                = var.database_name
+  username               = "csye6225"
+  password               = var.db_password
+  parameter_group_name   = aws_db_parameter_group.postgresql_parameter_group.name
+  skip_final_snapshot    = true
+  publicly_accessible    = false
+  vpc_security_group_ids = [aws_security_group.database-security-group.id]
+  db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name # Using DB Subnet Group
+  multi_az               = false
+
+  tags = {
+    Name = "csye6225"
+  }
+}
+
 # EC2 instance using custom AMI
 resource "aws_instance" "webapp-instance" {
   ami           = var.custom_ami
   instance_type = var.instance_type
   subnet_id     = aws_subnet.public_subnets[0].id
   key_name      = var.key_name
+  depends_on    = [aws_db_instance.rds_instance]
 
   vpc_security_group_ids = [aws_security_group.application-security-group.id]
 
@@ -138,6 +212,12 @@ resource "aws_instance" "webapp-instance" {
     delete_on_termination = true
   }
 
+  user_data = templatefile("./scripts/user_data_script.sh", {
+    DB_HOST     = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
+    DB_USER     = var.db_username
+    DB_PASSWORD = var.db_password
+    DB_NAME     = var.database_name
+  })
   tags = {
     Name = "webapp-instance"
   }
