@@ -59,7 +59,7 @@ variable "db_password" {
   default     = "password"
 }
 
-variable "db_name" {
+variable "database_name" {
   description = "Name of the database"
   type        = string
   default     = "clouddb"

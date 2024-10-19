@@ -5,7 +5,9 @@ provider "aws" {
 
 # VPC
 resource "aws_vpc" "vpc-01" {
-  cidr_block = var.vpc_cidr
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = true
+  enable_dns_hostnames = true
   tags = {
     Name = "vpc-01"
   }
@@ -152,6 +154,11 @@ resource "aws_db_parameter_group" "postgresql_parameter_group" {
   family      = "postgres16"
   description = "DB Parameter Group for webapp"
 
+  parameter {
+    name  = "rds.force_ssl"
+    value = "0"
+  }
+
   tags = {
     Name = "csye6225-postgresql-params"
   }
@@ -174,6 +181,7 @@ resource "aws_db_instance" "rds_instance" {
   engine                 = "postgres"
   engine_version         = "16.1"
   identifier             = "csye6225"
+  db_name                = var.database_name
   username               = "csye6225"
   password               = var.db_password
   parameter_group_name   = aws_db_parameter_group.postgresql_parameter_group.name
@@ -204,49 +212,12 @@ resource "aws_instance" "webapp-instance" {
     delete_on_termination = true
   }
 
-  # user_data = templatefile("./scripts/user_data_script.sh", {
-  #   DB_HOST     = aws_db_instance.rds_instance.endpoint
-  #   DB_USER     = var.db_username
-  #   DB_PASSWORD = var.db_password
-  #   DB_NAME     = var.db_name
-  # })
-
-  user_data = <<-EOF
-    #!/bin/bash
-
-    # Enable logging to a file for troubleshooting
-    exec > /tmp/update_env.log 2>&1
-    set -e
-
-    echo "Waiting for RDS instance to be ready..."
-
-    # Retry until RDS is accessible
-    while ! nc -z ${aws_db_instance.rds_instance.endpoint} 5432; do
-      echo "Waiting for RDS to be accessible..."
-      sleep 10
-    done
-
-    echo "RDS is now accessible."
-
-    # Ensure the .env file has the correct owner and permissions before writing
-    sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
-    sudo chmod 600 /home/csye6225/webapp/.env
-
-    # Update or append environment variables
-    sudo -u csye6225 bash -c "sed -i '/^DB_HOST=/d' /home/csye6225/webapp/.env && echo \"DB_HOST=${aws_db_instance.rds_instance.endpoint}\" >> /home/csye6225/webapp/.env"
-    sudo -u csye6225 bash -c "sed -i '/^DB_USER=/d' /home/csye6225/webapp/.env && echo \"DB_USER=${var.db_username}\" >> /home/csye6225/webapp/.env"
-    sudo -u csye6225 bash -c "sed -i '/^DB_PASSWORD=/d' /home/csye6225/webapp/.env && echo \"DB_PASSWORD=${var.db_password}\" >> /home/csye6225/webapp/.env"
-    sudo -u csye6225 bash -c "sed -i '/^DB_DATABASE=/d' /home/csye6225/webapp/.env && echo \"DB_DATABASE=${var.db_name}\" >> /home/csye6225/webapp/.env"
-    sudo -u csye6225 bash -c "sed -i '/^DB_PORT=/d' /home/csye6225/webapp/.env && echo \"DB_PORT=5432\" >> /home/csye6225/webapp/.env"
-
-    # Ensure the .env file has the correct owner and permissions after writing
-    sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
-    sudo chmod 600 /home/csye6225/webapp/.env
-
-    # Start the application service
-    sudo systemctl start webapp_service || { echo "Failed to start service"; exit 1; }
-    echo "Web application started."
-  EOF
+  user_data = templatefile("./scripts/user_data_script.sh", {
+    DB_HOST     = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
+    DB_USER     = var.db_username
+    DB_PASSWORD = var.db_password
+    DB_NAME     = var.database_name
+  })
   tags = {
     Name = "webapp-instance"
   }
