@@ -33,6 +33,7 @@ variable "custom_ami" {
 variable "application_port" {
   description = "Port on which your application runs"
   type        = number
+  default     = 3000
 }
 
 variable "instance_type" {

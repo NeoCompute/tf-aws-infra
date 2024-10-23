@@ -25,3 +25,11 @@ output "private_route_table_id" {
 output "instance_public_ip" {
   value = aws_instance.webapp-instance.public_ip
 }
+
+output "application_port" {
+  value = var.application_port
+}
+
+output "db_instance_endpoint" {
+  value = aws_db_instance.db-instance.endpoint
+}
