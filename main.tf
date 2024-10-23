@@ -136,11 +136,18 @@ resource "aws_security_group" "database-security-group" {
   } # allowing incoming connection from EC2 instance security group
 
 
+  # egress {
+  #   from_port   = 0
+  #   to_port     = 0
+  #   protocol    = "-1"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
+
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.application-security-group.id]
   }
 
   tags = {
@@ -148,7 +155,7 @@ resource "aws_security_group" "database-security-group" {
   }
 }
 
-# DB Parameter Group for DB
+# Parameter Group for DB
 resource "aws_db_parameter_group" "postgresql_parameter_group" {
   name        = "csye6225-postgresql-params"
   family      = "postgres16"
@@ -182,7 +189,7 @@ resource "aws_db_instance" "rds_instance" {
   engine_version         = "16.1"
   identifier             = "csye6225"
   db_name                = var.database_name
-  username               = "csye6225"
+  username               = var.db_username
   password               = var.db_password
   parameter_group_name   = aws_db_parameter_group.postgresql_parameter_group.name
   skip_final_snapshot    = true
@@ -217,6 +224,7 @@ resource "aws_instance" "webapp-instance" {
     DB_USER     = var.db_username
     DB_PASSWORD = var.db_password
     DB_NAME     = var.database_name
+    APP_PORT    = var.application_port
   })
   tags = {
     Name = "webapp-instance"
