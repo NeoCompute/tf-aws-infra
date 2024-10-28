@@ -211,6 +211,7 @@ resource "aws_instance" "webapp-instance" {
   key_name      = var.key_name
   depends_on    = [aws_db_instance.rds_instance]
 
+  iam_instance_profile   = aws_iam_instance_profile.cloudwatch_agent_profile.name
   vpc_security_group_ids = [aws_security_group.application-security-group.id]
 
   root_block_device {
@@ -229,4 +230,160 @@ resource "aws_instance" "webapp-instance" {
   tags = {
     Name = "webapp-instance"
   }
+}
+
+resource "random_uuid" "bucket_name" {} //generate UUID for s3 naming
+
+resource "aws_iam_policy" "s3_bucket_policy" {
+  name        = "S3BucketAccessPolicy"
+  description = "Policy to allow access to S3 bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:ListBucket",
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        Resource = [
+          "arn:aws:s3:::${aws_s3_bucket.bucket.id}",
+          "arn:aws:s3:::${aws_s3_bucket.bucket.id}/*"
+        ]
+      }
+    ]
+  })
+} // IAM policy for S3 bucket
+
+resource "aws_iam_role" "s3_access_role" {
+  name = "S3AccessRole"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "ec2.amazonaws.com" },
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_policy_attachment" {
+  role       = aws_iam_role.s3_access_role.name
+  policy_arn = aws_iam_policy.s3_bucket_policy.arn
+} // creating IAM Role and attaching the policy
+
+resource "aws_kms_key" "kms_key" {
+  description             = "This key is used to encrypt bucket objects"
+  deletion_window_in_days = 10
+}
+
+resource "aws_s3_bucket" "bucket" {
+  bucket        = random_uuid.bucket_name.result
+  force_destroy = true
+} // Creating S3 bucket with random UUID
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "aws_s3_server_side_config" {
+  bucket = aws_s3_bucket.bucket.id
+  rule {
+    apply_server_side_encryption_by_default {
+      kms_master_key_id = aws_kms_key.kms_key.arn
+      sse_algorithm     = "aws:kms"
+    }
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "bucket" {
+  bucket = aws_s3_bucket.bucket.id
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
+resource "aws_s3_bucket_acl" "bucket" {
+  depends_on = [aws_s3_bucket_ownership_controls.bucket]
+
+  bucket = aws_s3_bucket.bucket.id
+  acl    = "private"
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "lifecycle_rule" {
+  bucket = aws_s3_bucket.bucket.id
+
+  rule {
+    id     = "TransitionToStandardIA"
+    status = "Enabled"
+
+    transition {
+      days          = 30
+      storage_class = "STANDARD_IA"
+    }
+  }
+} // Transition of storage class to IA from Standard
+
+
+
+# Route 53 Record for `dev` subdomain
+resource "aws_route53_record" "subdomain_update" {
+  zone_id = var.hosted_zone_id
+  name    = var.subdomain_name
+  type    = "A"
+  ttl     = 300
+  records = [aws_instance.webapp-instance.public_ip]
+}
+
+
+# IAM Role for cloudwatch agent
+resource "aws_iam_role" "cloudwatch_agent_role" {
+  name = "CloudWatchAgentRole"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "ec2.amazonaws.com" },
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy" "cloudwatch_agent_policy" {
+  name        = "CloudWatchAgentPolicy"
+  description = "Policy for CloudWatch Agent to send logs and metrics"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "cloudwatch:PutMetricData", # Allow CloudWatch metrics reporting
+          "logs:CreateLogGroup",      # Allow creating CloudWatch log groups
+          "logs:CreateLogStream",     # Allow creating log streams within log groups
+          "logs:PutLogEvents",        # Allow writing log events to streams
+          "ssm:GetParameter",         # Allow fetching parameters (required for agent configs)
+          "ec2:DescribeTags",         # Allow reading EC2 tags for instance identification in logs
+          "ec2:DescribeInstances"     # Allow describing EC2 instances (optional but recommended)
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "attach_cloudwatch_policy" {
+  role       = aws_iam_role.cloudwatch_agent_role.name
+  policy_arn = aws_iam_policy.cloudwatch_agent_policy.arn
+}
+
+
+resource "aws_iam_instance_profile" "cloudwatch_agent_profile" {
+  name = "CloudWatchAgentInstanceProfile"
+  role = aws_iam_role.cloudwatch_agent_role.name
 }
