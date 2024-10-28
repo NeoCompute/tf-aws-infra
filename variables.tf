@@ -71,3 +71,13 @@ variable "db_username" {
   type        = string
   default     = "csye6225"
 }
+
+variable "hosted_zone_id" {
+  description = "Hosted zone ID for the Route 53"
+  type        = string
+}
+
+variable "subdomain_name" {
+  description = "Subdomain name for the Route 53"
+  type        = string
+}
