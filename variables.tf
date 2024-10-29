@@ -81,3 +81,9 @@ variable "subdomain_name" {
   description = "Subdomain name for the Route 53"
   type        = string
 }
+
+variable "webapp_environment" {
+  description = "Environment for the webapp"
+  type        = string
+  default     = "production"
+}
