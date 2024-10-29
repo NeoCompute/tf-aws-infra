@@ -8,12 +8,17 @@ DB_USER=${DB_USER}
 DB_PASSWORD=${DB_PASSWORD}
 DB_NAME=${DB_NAME}
 APP_PORT=${APP_PORT}
+ENVIRONMENT=${ENVIRONMENT}
+S3_BUCKET_NAME=${S3_BUCKET_NAME}
+
 
 echo "DB_HOST=${DB_HOST}"
 echo "DB_USER=${DB_USER}"
 echo "DB_PASSWORD=${DB_PASSWORD}"
 echo "DB_DATABASE=${DB_NAME}"
 echo "PORT=${APP_PORT}"
+echo "ENVIRONMENT=${ENVIRONMENT}"
+echo "S3_BUCKET_NAME=${S3_BUCKET_NAME}"
 
 
 sudo -u csye6225 bash -c "sed -i '/^DB_HOST=/d' /home/csye6225/webapp/.env && echo \"DB_HOST=${DB_HOST}\" >> /home/csye6225/webapp/.env"
@@ -22,6 +27,8 @@ sudo -u csye6225 bash -c "sed -i '/^DB_PASSWORD=/d' /home/csye6225/webapp/.env &
 sudo -u csye6225 bash -c "sed -i '/^DB_DATABASE=/d' /home/csye6225/webapp/.env && echo \"DB_DATABASE=${DB_NAME}\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^DB_PORT=/d' /home/csye6225/webapp/.env && echo \"DB_PORT=5432\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^PORT=/d' /home/csye6225/webapp/.env && echo \"PORT=${APP_PORT}\" >> /home/csye6225/webapp/.env"
+sudo -u csye6225 bash -c "sed -i '/^ENVIRONMENT=/d' /home/csye6225/webapp/.env && echo \"ENVIRONMENT=${ENVIRONMENT}\" >> /home/csye6225/webapp/.env"
+sudo -u csye6225 bash -c "sed -i '/^S3_BUCKET_NAME=/d' /home/csye6225/webapp/.env && echo \"S3_BUCKET_NAME=${S3_BUCKET_NAME}\" >> /home/csye6225/webapp/.env"
 
 # Ensure the .env file has the correct owner and permissions after writing
 sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
@@ -40,10 +47,6 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
         "service_address": ":8125",
         "metrics_collection_interval": 60,
         "metrics_aggregation_interval": 300
-      },
-      "collectd": {
-        "name_prefix": "My_collectd_metrics_",
-        "metrics_aggregation_interval": 120
       }
     }
   },
@@ -54,7 +57,7 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
           {
             "file_path": "/var/log/syslog",
             "log_group_name": "/aws/ec2/webappGroup",
-            "log_stream_name": "{instance_id}/syslog",
+            "log_stream_name": "webapp/syslog",
             "retention_in_days": 1
           }
         ]
@@ -64,7 +67,6 @@ cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 }
 EOF
 
-sudo apt-get install collectd -y
 sudo chown cwagent:cwagent /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 sudo chmod 644 /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 

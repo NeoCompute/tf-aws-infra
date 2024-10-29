@@ -221,18 +221,20 @@ resource "aws_instance" "webapp-instance" {
   }
 
   user_data = templatefile("./scripts/user_data_script.sh", {
-    DB_HOST     = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
-    DB_USER     = var.db_username
-    DB_PASSWORD = var.db_password
-    DB_NAME     = var.database_name
-    APP_PORT    = var.application_port
+    DB_HOST        = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
+    DB_USER        = var.db_username
+    DB_PASSWORD    = var.db_password
+    DB_NAME        = var.database_name
+    APP_PORT       = var.application_port
+    ENVIRONMENT    = var.webapp_environment
+    S3_BUCKET_NAME = aws_s3_bucket.bucket.bucket
   })
   tags = {
     Name = "webapp-instance"
   }
 }
 
-resource "random_uuid" "bucket_name" {} //generate UUID for s3 naming
+resource "random_uuid" "bucket_name" {}
 
 resource "aws_iam_policy" "s3_bucket_policy" {
   name        = "S3BucketAccessPolicy"
@@ -362,14 +364,22 @@ resource "aws_iam_policy" "cloudwatch_agent_policy" {
     Statement = [
       {
         Effect = "Allow",
-        Action = [
-          "cloudwatch:PutMetricData", # Allow CloudWatch metrics reporting
-          "logs:CreateLogGroup",      # Allow creating CloudWatch log groups
-          "logs:CreateLogStream",     # Allow creating log streams within log groups
-          "logs:PutLogEvents",        # Allow writing log events to streams
-          "ssm:GetParameter",         # Allow fetching parameters (required for agent configs)
-          "ec2:DescribeTags",         # Allow reading EC2 tags for instance identification in logs
-          "ec2:DescribeInstances"     # Allow describing EC2 instances (optional but recommended)
+        "Action" : [
+          "cloudwatch:PutMetricData",
+          "cloudwatch:ListMetrics",
+          "cloudwatch:GetMetricData",
+          "logs:DescribeLogStreams",
+          "logs:DescribeLogGroups",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+          "ssm:GetParameter",
+          "ec2:DescribeTags",
+          "ec2:DescribeInstances",
+          "kms:GenerateDataKey",
+          "kms:Decrypt",
+          "s3:PutObject",
+          "s3:DeleteObject"
         ],
         Resource = "*"
       }

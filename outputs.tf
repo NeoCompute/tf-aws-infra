@@ -30,6 +30,10 @@ output "application_port" {
   value = var.application_port
 }
 
-# output "db_instance_endpoint" {
-#   value = aws_db_instance.rds_instance.endpoint
-# }
+output "db_instance_endpoint" {
+  value = aws_db_instance.rds_instance.endpoint
+}
+
+output "s3_bucket_name" {
+  value = aws_s3_bucket.bucket.bucket
+}
