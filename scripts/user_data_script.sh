@@ -41,12 +41,12 @@ sudo systemctl daemon-reload
 cat <<EOF > /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
 {
   "metrics": {
-    "namespace": "webapp",
+    "namespace": "webappDev",
     "metrics_collected": {
       "statsd": {
         "service_address": ":8125",
-        "metrics_collection_interval": 60,
-        "metrics_aggregation_interval": 300
+        "metrics_collection_interval": 1,
+        "metrics_aggregation_interval": 60
       }
     }
   },
