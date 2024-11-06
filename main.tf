@@ -574,7 +574,7 @@ resource "aws_autoscaling_policy" "scale_down" {
 resource "aws_cloudwatch_metric_alarm" "cpu_high" {
   alarm_name          = "cpu-high"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = 1
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
   period              = 60
@@ -590,7 +590,7 @@ resource "aws_cloudwatch_metric_alarm" "cpu_high" {
 resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   alarm_name          = "cpu-low"
   comparison_operator = "LessThanThreshold"
-  evaluation_periods  = 2
+  evaluation_periods  = 1
   metric_name         = "CPUUtilization"
   namespace           = "AWS/EC2"
   period              = 60
@@ -628,7 +628,7 @@ resource "aws_lb_target_group" "app_target_group" {
 
   health_check {
     path                = "/healthz"
-    interval            = 30
+    interval            = 120
     timeout             = 5
     healthy_threshold   = 2
     unhealthy_threshold = 2
