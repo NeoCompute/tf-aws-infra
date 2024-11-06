@@ -134,12 +134,12 @@ resource "aws_security_group" "application-security-group" {
     protocol        = "tcp"
     security_groups = [aws_security_group.load_balancer_security_group.id]
   }
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # ingress {
+  #   from_port   = 22
+  #   to_port     = 22
+  #   protocol    = "tcp"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
   ingress {
     from_port       = var.application_port
     to_port         = var.application_port
@@ -482,49 +482,6 @@ resource "aws_security_group" "load_balancer_security_group" {
 }
 
 
-# resource "aws_launch_template" "csye6225_asg" {
-#   name_prefix = "webapp-launch-template-"
-
-#   image_id      = var.custom_ami
-#   instance_type = var.instance_type
-
-#   key_name               = var.key_name
-#   vpc_security_group_ids = [aws_security_group.application-security-group.id]
-#   network_interfaces {
-#     associate_public_ip_address = true
-#     subnet_id                   = aws_subnet.public_subnets[0].id
-#   }
-
-#   user_data = base64encode(templatefile("./scripts/user_data_script.sh", {
-#     DB_HOST        = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
-#     DB_USER        = var.db_username
-#     DB_PASSWORD    = var.db_password
-#     DB_NAME        = var.database_name
-#     APP_PORT       = var.application_port
-#     ENVIRONMENT    = var.webapp_environment
-#     S3_BUCKET_NAME = aws_s3_bucket.bucket.bucket
-#   }))
-
-#   monitoring {
-#     enabled = true
-#   }
-#   block_device_mappings {
-#     device_name = "/dev/xvda"
-#     ebs {
-#       volume_size           = var.root_volume_size
-#       volume_type           = "gp2"
-#       delete_on_termination = true
-#     }
-#   }
-
-#   tag_specifications {
-#     resource_type = "instance"
-#     tags = {
-#       Name = "webapp-ec2-instance"
-#     }
-#   }
-# }
-
 resource "aws_launch_template" "csye6225_asg" {
   name_prefix = "webapp-launch-template-"
 
@@ -577,9 +534,9 @@ resource "aws_launch_template" "csye6225_asg" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "asg" {
-  desired_capacity    = 1
-  max_size            = 3
-  min_size            = 1
+  desired_capacity    = 3
+  max_size            = 5
+  min_size            = 3
   default_cooldown    = 60
   vpc_zone_identifier = aws_subnet.public_subnets[*].id
 
@@ -645,27 +602,6 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
   }
 }
 
-# resource "aws_security_group" "alb_security_group" {
-#   vpc_id = aws_vpc.vpc-01.id
-
-#   ingress {
-#     from_port   = 80
-#     to_port     = 80
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   tags = {
-#     Name = "alb-security-group"
-#   }
-# }
 
 # Application Load Balancer
 resource "aws_lb" "app_load_balancer" {
@@ -691,7 +627,7 @@ resource "aws_lb_target_group" "app_target_group" {
   target_type = "instance"
 
   health_check {
-    path                = "/"
+    path                = "/healthz"
     interval            = 30
     timeout             = 5
     healthy_threshold   = 2
