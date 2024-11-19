@@ -87,3 +87,44 @@ variable "webapp_environment" {
   type        = string
   default     = "production"
 }
+
+variable "mailgun_api_key" {
+  description = "Mailgun API key"
+  type        = string
+}
+
+variable "mailgun_domain" {
+  description = "Mailgun domain"
+  type        = string
+}
+
+variable "lambda_function_path" {
+  description = "Path to the lambda function"
+  type        = string
+}
+
+variable "lambda_function_name" {
+  description = "Name of the lambda function"
+  type        = string
+}
+
+variable "verify_email_link" {
+  description = "Link to verify email"
+  type        = string
+}
+
+variable "verify_email_expiry_time" {
+  description = "Expiry time for the verification link"
+  type        = number
+  default     = 2
+}
+variable "from_email" {
+  description = "Email address to send emails from"
+  type        = string
+}
+
+variable "token_expiry_time" {
+  description = "Expiry time for the token"
+  type        = number
+  default     = 2
+}

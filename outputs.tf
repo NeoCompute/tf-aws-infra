@@ -37,3 +37,12 @@ output "db_instance_endpoint" {
 output "s3_bucket_name" {
   value = aws_s3_bucket.bucket.bucket
 }
+
+output "launch_template_id" {
+  value = aws_launch_template.csye6225_asg.id
+}
+
+output "asg_name" {
+  value       = aws_autoscaling_group.asg.name
+  description = "The name of the Auto Scaling Group."
+}

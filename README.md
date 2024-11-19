@@ -1,4 +1,4 @@
-# tf-gcp-infra
+# tf-aws-infra
 
 My IaaC using Terraform for AWS Cloud Platform for CYSE6225 Network Structures and Cloud Computing
 
