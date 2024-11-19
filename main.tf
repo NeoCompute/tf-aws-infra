@@ -128,18 +128,18 @@ resource "aws_route_table_association" "private_associations" {
 resource "aws_security_group" "application-security-group" {
   vpc_id = aws_vpc.vpc-01.id
 
-  ingress {
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.load_balancer_security_group.id]
-  }
   # ingress {
-  #   from_port   = 22
-  #   to_port     = 22
-  #   protocol    = "tcp"
-  #   cidr_blocks = ["0.0.0.0/0"]
+  #   from_port       = 22
+  #   to_port         = 22
+  #   protocol        = "tcp"
+  #   security_groups = [aws_security_group.load_balancer_security_group.id]
   # }
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   ingress {
     from_port       = var.application_port
     to_port         = var.application_port
@@ -167,7 +167,7 @@ resource "aws_security_group" "database-security-group" {
     to_port         = 5432
     protocol        = "tcp"
     security_groups = [aws_security_group.application-security-group.id]
-  } # allowing incoming connection from EC2 instance security group
+  }
 
 
   # egress {
@@ -425,7 +425,8 @@ resource "aws_iam_policy" "cloudwatch_agent_policy" {
           "kms:GenerateDataKey",
           "kms:Decrypt",
           "s3:PutObject",
-          "s3:DeleteObject"
+          "s3:DeleteObject",
+          "sns:Publish"
         ],
         Resource = "*"
       }
@@ -451,29 +452,32 @@ resource "aws_security_group" "load_balancer_security_group" {
 
   # Ingress rule to allow HTTP (port 80) from any IP
   ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTP traffic from any IP"
+    from_port        = 80
+    to_port          = 80
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+    description      = "Allow HTTP traffic from any IP"
   }
 
   # Ingress rule to allow HTTPS (port 443) from any IP
   ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTPS traffic from any IP"
+    from_port        = 443
+    to_port          = 443
+    protocol         = "tcp"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+    description      = "Allow HTTPS traffic from any IP"
   }
 
   # Egress rule to allow all outbound traffic
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow all outbound traffic"
+    from_port        = 0
+    to_port          = 0
+    protocol         = "-1"
+    cidr_blocks      = ["0.0.0.0/0"]
+    ipv6_cidr_blocks = ["::/0"]
+    description      = "Allow all outbound traffic"
   }
 
   tags = {
@@ -502,13 +506,15 @@ resource "aws_launch_template" "csye6225_asg" {
   }
 
   user_data = base64encode(templatefile("./scripts/user_data_script.sh", {
-    DB_HOST        = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
-    DB_USER        = var.db_username
-    DB_PASSWORD    = var.db_password
-    DB_NAME        = var.database_name
-    APP_PORT       = var.application_port
-    ENVIRONMENT    = var.webapp_environment
-    S3_BUCKET_NAME = aws_s3_bucket.bucket.bucket
+    DB_HOST               = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
+    DB_USER               = var.db_username
+    DB_PASSWORD           = var.db_password
+    DB_NAME               = var.database_name
+    APP_PORT              = var.application_port
+    ENVIRONMENT           = var.webapp_environment
+    S3_BUCKET_NAME        = aws_s3_bucket.bucket.bucket
+    SNS_TOPIC_ARN         = aws_sns_topic.user_verification_topic.arn
+    TOKEN_EXPIRATION_TIME = var.token_expiry_time
   }))
 
   monitoring {
@@ -651,3 +657,154 @@ resource "aws_lb_listener" "app_listener" {
     target_group_arn = aws_lb_target_group.app_target_group.arn
   }
 }
+
+# Create a SNS Topic
+resource "aws_sns_topic" "user_verification_topic" {
+  name = "user-verification-topic"
+}
+
+# IAM Role for Lambda Execution
+resource "aws_iam_role" "lambda_execution_role" {
+  name = "lambda-execution-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect    = "Allow",
+        Principal = { Service = "lambda.amazonaws.com" },
+        Action    = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+# IAM Policy for Lambda Permissions
+resource "aws_iam_policy" "lambda_policy" {
+  name        = "lambda-sns-policy"
+  description = "Permissions for Lambda to access SNS and CloudWatch Logs"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect : "Allow",
+        Action : ["sns:Publish"],
+        Resource : aws_sns_topic.user_verification_topic.arn
+      },
+      {
+        Effect : "Allow",
+        Action : [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource : "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
+
+# Attach the policy to the Lambda role
+resource "aws_iam_role_policy_attachment" "lambda_policy_attachment" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_policy.arn
+}
+
+
+resource "aws_lambda_function" "user_verification_lambda" {
+  filename      = var.lambda_function_path
+  function_name = var.lambda_function_name
+  role          = aws_iam_role.lambda_execution_role.arn
+  handler       = "index.handler"
+  runtime       = "nodejs20.x"
+  memory_size   = 128
+  timeout       = 30
+
+  # environment {
+  #   variables = {
+  #     POSTGRES_DB_HOST         = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5),
+  #     POSTGRES_DB_USER         = var.db_username,
+  #     POSTGRES_DB_PASSWORD     = var.db_password,
+  #     POSTGRES_DB_NAME         = var.database_name,
+  #     MAILGUN_API_KEY          = var.mailgun_api_key,
+  #     MAILGUN_DOMAIN           = var.mailgun_domain
+  #     VERIFY_EMAIL_LINK        = var.verify_email_link
+  #     VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
+  #     FROM_EMAIL               = var.from_email
+  #   }
+  # }
+
+  environment {
+    variables = {
+      MAILGUN_API_KEY          = var.mailgun_api_key,
+      MAILGUN_DOMAIN           = var.mailgun_domain
+      VERIFY_EMAIL_LINK        = var.verify_email_link
+      VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
+      FROM_EMAIL               = var.from_email
+    }
+  }
+
+  # vpc_config {
+  #   subnet_ids         = aws_subnet.private_subnets[*].id
+  #   security_group_ids = [aws_security_group.lambda_security_group.id]
+  # }
+}
+
+# resource "aws_security_group" "lambda_security_group" {
+#   vpc_id = aws_vpc.vpc-01.id
+
+#   egress {
+#     from_port       = 5432
+#     to_port         = 5432
+#     protocol        = "tcp"
+#     security_groups = [aws_security_group.database-security-group.id]
+#     description     = "Allow Lambda to connect to RDS"
+#   }
+
+#   egress {
+#     from_port   = 0
+#     to_port     = 0
+#     protocol    = "-1"
+#     cidr_blocks = ["0.0.0.0/0"]
+#     description = "Allow Lambda to access the internet"
+#   }
+
+#   tags = {
+#     Name = "lambda-security-group"
+#   }
+# }
+
+resource "aws_sns_topic_subscription" "lambda_sns_subscription" {
+  topic_arn = aws_sns_topic.user_verification_topic.arn
+  protocol  = "lambda"
+  endpoint  = aws_lambda_function.user_verification_lambda.arn
+
+  depends_on = [
+    aws_lambda_function.user_verification_lambda
+  ]
+}
+
+resource "aws_lambda_permission" "allow_sns_invocation" {
+  statement_id  = "AllowExecutionFromSNS"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.user_verification_lambda.function_name
+  principal     = "sns.amazonaws.com"
+  source_arn    = aws_sns_topic.user_verification_topic.arn
+}
+
+# resource "aws_eip" "nat_eip" {
+#   domain = "vpc"
+# }
+
+# resource "aws_nat_gateway" "nat_gateway" {
+#   allocation_id = aws_eip.nat_eip.id
+#   subnet_id     = aws_subnet.public_subnets[0].id
+#   depends_on    = [aws_eip.nat_eip]
+# }
+
+# resource "aws_route" "private_route" {
+#   route_table_id         = aws_route_table.private_route_table.id
+#   destination_cidr_block = "0.0.0.0/0"
+#   nat_gateway_id         = aws_nat_gateway.nat_gateway.id
+# }

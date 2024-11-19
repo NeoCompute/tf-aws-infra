@@ -10,6 +10,8 @@ DB_NAME=${DB_NAME}
 APP_PORT=${APP_PORT}
 ENVIRONMENT=${ENVIRONMENT}
 S3_BUCKET_NAME=${S3_BUCKET_NAME}
+SNS_TOPIC_ARN=${SNS_TOPIC_ARN}
+TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}
 
 
 echo "DB_HOST=${DB_HOST}"
@@ -19,6 +21,8 @@ echo "DB_DATABASE=${DB_NAME}"
 echo "PORT=${APP_PORT}"
 echo "ENVIRONMENT=${ENVIRONMENT}"
 echo "S3_BUCKET_NAME=${S3_BUCKET_NAME}"
+echo "SNS_TOPIC_ARN=${SNS_TOPIC_ARN}"
+echo "TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}"
 
 
 sudo -u csye6225 bash -c "sed -i '/^DB_HOST=/d' /home/csye6225/webapp/.env && echo \"DB_HOST=${DB_HOST}\" >> /home/csye6225/webapp/.env"
@@ -29,6 +33,8 @@ sudo -u csye6225 bash -c "sed -i '/^DB_PORT=/d' /home/csye6225/webapp/.env && ec
 sudo -u csye6225 bash -c "sed -i '/^PORT=/d' /home/csye6225/webapp/.env && echo \"PORT=${APP_PORT}\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^ENVIRONMENT=/d' /home/csye6225/webapp/.env && echo \"ENVIRONMENT=${ENVIRONMENT}\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^S3_BUCKET_NAME=/d' /home/csye6225/webapp/.env && echo \"S3_BUCKET_NAME=${S3_BUCKET_NAME}\" >> /home/csye6225/webapp/.env"
+sudo -u csye6225 bash -c "sed -i '/^SNS_TOPIC_ARN=/d' /home/csye6225/webapp/.env && echo \"SNS_TOPIC_ARN=${SNS_TOPIC_ARN}\" >> /home/csye6225/webapp/.env"
+sudo -u csye6225 bash -c "sed -i '/^TOKEN_EXPIRATION_TIME=/d' /home/csye6225/webapp/.env && echo \"TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}\" >> /home/csye6225/webapp/.env"
 
 # Ensure the .env file has the correct owner and permissions after writing
 sudo chown csye6225:csye6225 /home/csye6225/webapp/.env
