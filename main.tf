@@ -81,59 +81,9 @@ resource "aws_route_table_association" "private_associations" {
   route_table_id = aws_route_table.private_route_table.id
 }
 
-# Security Group for EC2 instance
-# resource "aws_security_group" "application-security-group" {
-#   vpc_id = aws_vpc.vpc-01.id
-
-#   ingress {
-#     from_port   = 22
-#     to_port     = 22
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   ingress {
-#     from_port   = 80
-#     to_port     = 80
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   ingress {
-#     from_port   = 443
-#     to_port     = 443
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   ingress {
-#     from_port   = var.application_port
-#     to_port     = var.application_port
-#     protocol    = "tcp"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#   }
-
-#   tags = {
-#     Name = "application-security-group"
-#   }
-# }
-
 resource "aws_security_group" "application-security-group" {
   vpc_id = aws_vpc.vpc-01.id
 
-  # ingress {
-  #   from_port       = 22
-  #   to_port         = 22
-  #   protocol        = "tcp"
-  #   security_groups = [aws_security_group.load_balancer_security_group.id]
-  # }
   ingress {
     from_port   = 22
     to_port     = 22
@@ -168,14 +118,6 @@ resource "aws_security_group" "database-security-group" {
     protocol        = "tcp"
     security_groups = [aws_security_group.application-security-group.id]
   }
-
-
-  # egress {
-  #   from_port   = 0
-  #   to_port     = 0
-  #   protocol    = "-1"
-  #   cidr_blocks = ["0.0.0.0/0"]
-  # }
 
   egress {
     from_port       = 5432
@@ -237,36 +179,6 @@ resource "aws_db_instance" "rds_instance" {
   }
 }
 
-# EC2 instance using custom AMI
-# resource "aws_instance" "webapp-instance" {
-#   ami           = var.custom_ami
-#   instance_type = var.instance_type
-#   subnet_id     = aws_subnet.public_subnets[0].id
-#   key_name      = var.key_name
-#   depends_on    = [aws_db_instance.rds_instance]
-
-#   iam_instance_profile   = aws_iam_instance_profile.cloudwatch_agent_profile.name
-#   vpc_security_group_ids = [aws_security_group.application-security-group.id]
-
-#   root_block_device {
-#     volume_type           = "gp2"
-#     volume_size           = var.root_volume_size
-#     delete_on_termination = true
-#   }
-
-#   user_data = templatefile("./scripts/user_data_script.sh", {
-#     DB_HOST        = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
-#     DB_USER        = var.db_username
-#     DB_PASSWORD    = var.db_password
-#     DB_NAME        = var.database_name
-#     APP_PORT       = var.application_port
-#     ENVIRONMENT    = var.webapp_environment
-#     S3_BUCKET_NAME = aws_s3_bucket.bucket.bucket
-#   })
-#   tags = {
-#     Name = "webapp-instance"
-#   }
-# }
 
 resource "random_uuid" "bucket_name" {}
 
@@ -360,17 +272,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "lifecycle_rule" {
     }
   }
 } // Transition of storage class to IA from Standard
-
-
-
-# Route 53 Record for `dev` subdomain
-# resource "aws_route53_record" "subdomain_update" {
-#   zone_id = var.hosted_zone_id
-#   name    = var.subdomain_name
-#   type    = "A"
-#   ttl     = 300
-#   records = [aws_instance.webapp-instance.public_ip]
-# }
 
 resource "aws_route53_record" "app_alias_record" {
   zone_id = var.hosted_zone_id
@@ -721,20 +622,6 @@ resource "aws_lambda_function" "user_verification_lambda" {
   memory_size   = 128
   timeout       = 30
 
-  # environment {
-  #   variables = {
-  #     POSTGRES_DB_HOST         = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5),
-  #     POSTGRES_DB_USER         = var.db_username,
-  #     POSTGRES_DB_PASSWORD     = var.db_password,
-  #     POSTGRES_DB_NAME         = var.database_name,
-  #     MAILGUN_API_KEY          = var.mailgun_api_key,
-  #     MAILGUN_DOMAIN           = var.mailgun_domain
-  #     VERIFY_EMAIL_LINK        = var.verify_email_link
-  #     VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
-  #     FROM_EMAIL               = var.from_email
-  #   }
-  # }
-
   environment {
     variables = {
       MAILGUN_API_KEY          = var.mailgun_api_key,
@@ -745,35 +632,8 @@ resource "aws_lambda_function" "user_verification_lambda" {
     }
   }
 
-  # vpc_config {
-  #   subnet_ids         = aws_subnet.private_subnets[*].id
-  #   security_group_ids = [aws_security_group.lambda_security_group.id]
-  # }
+  depends_on = [aws_cloudwatch_log_group.lambda_log_group]
 }
-
-# resource "aws_security_group" "lambda_security_group" {
-#   vpc_id = aws_vpc.vpc-01.id
-
-#   egress {
-#     from_port       = 5432
-#     to_port         = 5432
-#     protocol        = "tcp"
-#     security_groups = [aws_security_group.database-security-group.id]
-#     description     = "Allow Lambda to connect to RDS"
-#   }
-
-#   egress {
-#     from_port   = 0
-#     to_port     = 0
-#     protocol    = "-1"
-#     cidr_blocks = ["0.0.0.0/0"]
-#     description = "Allow Lambda to access the internet"
-#   }
-
-#   tags = {
-#     Name = "lambda-security-group"
-#   }
-# }
 
 resource "aws_sns_topic_subscription" "lambda_sns_subscription" {
   topic_arn = aws_sns_topic.user_verification_topic.arn
@@ -793,18 +653,15 @@ resource "aws_lambda_permission" "allow_sns_invocation" {
   source_arn    = aws_sns_topic.user_verification_topic.arn
 }
 
-# resource "aws_eip" "nat_eip" {
-#   domain = "vpc"
-# }
+resource "aws_cloudwatch_log_group" "lambda_log_group" {
+  name              = "/aws/lambda/${var.lambda_function_name}"
+  retention_in_days = 14
+  tags = {
+    Name = "${var.lambda_function_name}-log-group"
+  }
+}
 
-# resource "aws_nat_gateway" "nat_gateway" {
-#   allocation_id = aws_eip.nat_eip.id
-#   subnet_id     = aws_subnet.public_subnets[0].id
-#   depends_on    = [aws_eip.nat_eip]
-# }
-
-# resource "aws_route" "private_route" {
-#   route_table_id         = aws_route_table.private_route_table.id
-#   destination_cidr_block = "0.0.0.0/0"
-#   nat_gateway_id         = aws_nat_gateway.nat_gateway.id
-# }
+resource "aws_cloudwatch_log_stream" "lambda_log_stream" {
+  name           = "${var.lambda_function_name}-stream"
+  log_group_name = aws_cloudwatch_log_group.lambda_log_group.name
+}
