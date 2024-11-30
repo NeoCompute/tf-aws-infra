@@ -166,17 +166,20 @@ resource "aws_db_instance" "rds_instance" {
   identifier             = "csye6225"
   db_name                = var.database_name
   username               = var.db_username
-  password               = var.db_password
+  password               = random_password.db_password.result
   parameter_group_name   = aws_db_parameter_group.postgresql_parameter_group.name
   skip_final_snapshot    = true
   publicly_accessible    = false
   vpc_security_group_ids = [aws_security_group.database-security-group.id]
   db_subnet_group_name   = aws_db_subnet_group.db_subnet_group.name # Using DB Subnet Group
   multi_az               = false
+  kms_key_id             = aws_kms_key.kms_rds_key.arn
+  storage_encrypted      = true
 
   tags = {
     Name = "csye6225"
   }
+  depends_on = [random_password.db_password]
 }
 
 
@@ -225,10 +228,10 @@ resource "aws_iam_role_policy_attachment" "s3_policy_attachment" {
   policy_arn = aws_iam_policy.s3_bucket_policy.arn
 } // creating IAM Role and attaching the policy
 
-resource "aws_kms_key" "kms_key" {
-  description             = "This key is used to encrypt bucket objects"
-  deletion_window_in_days = 10
-}
+# resource "aws_kms_key" "kms_key" {
+#   description             = "This key is used to encrypt bucket objects"
+#   deletion_window_in_days = 10
+# }
 
 resource "aws_s3_bucket" "bucket" {
   bucket        = random_uuid.bucket_name.result
@@ -239,7 +242,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "aws_s3_server_sid
   bucket = aws_s3_bucket.bucket.id
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.kms_key.arn
+      kms_master_key_id = aws_kms_key.kms_s3_key.arn
       sse_algorithm     = "aws:kms"
     }
   }
@@ -323,13 +326,25 @@ resource "aws_iam_policy" "cloudwatch_agent_policy" {
           "ssm:GetParameter",
           "ec2:DescribeTags",
           "ec2:DescribeInstances",
+          "ec2:DescribeVolumes",
           "kms:GenerateDataKey",
           "kms:Decrypt",
+          "kms:Encrypt",
           "s3:PutObject",
           "s3:DeleteObject",
           "sns:Publish"
         ],
         Resource = "*"
+      },
+      {
+        Effect   = "Allow",
+        Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
+        Resource = aws_secretsmanager_secret.rds_secret.arn
+      },
+      {
+        Effect   = "Allow",
+        Action   = ["kms:Decrypt"],
+        Resource = aws_kms_key.kms_secrets_manager_key.arn
       }
     ]
   })
@@ -394,8 +409,6 @@ resource "aws_launch_template" "csye6225_asg" {
   instance_type = var.instance_type
   key_name      = var.key_name
 
-  # iam_instance_profile = aws_iam_instance_profile.cloudwatch_agent_profile.name
-
   iam_instance_profile {
     name = aws_iam_instance_profile.cloudwatch_agent_profile.name
   }
@@ -409,7 +422,6 @@ resource "aws_launch_template" "csye6225_asg" {
   user_data = base64encode(templatefile("./scripts/user_data_script.sh", {
     DB_HOST               = substr(aws_db_instance.rds_instance.endpoint, 0, length(aws_db_instance.rds_instance.endpoint) - 5)
     DB_USER               = var.db_username
-    DB_PASSWORD           = var.db_password
     DB_NAME               = var.database_name
     APP_PORT              = var.application_port
     ENVIRONMENT           = var.webapp_environment
@@ -423,10 +435,10 @@ resource "aws_launch_template" "csye6225_asg" {
   }
 
   block_device_mappings {
-    device_name = "/dev/xvda"
+    device_name = "/dev/sda1"
     ebs {
       volume_size           = var.root_volume_size
-      volume_type           = "gp2"
+      volume_type           = "gp3"
       delete_on_termination = true
     }
   }
@@ -601,6 +613,13 @@ resource "aws_iam_policy" "lambda_policy" {
           "logs:PutLogEvents"
         ],
         Resource : "arn:aws:logs:*:*:*"
+      },
+      {
+        Effect : "Allow",
+        Action : [
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
+        ], Resource : aws_secretsmanager_secret.email_service_secret.arn
       }
     ]
   })
@@ -622,13 +641,19 @@ resource "aws_lambda_function" "user_verification_lambda" {
   memory_size   = 128
   timeout       = 30
 
+  # environment {
+  #   variables = {
+  #     MAILGUN_API_KEY          = var.mailgun_api_key,
+  #     MAILGUN_DOMAIN           = var.mailgun_domain
+  #     VERIFY_EMAIL_LINK        = var.verify_email_link
+  #     VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
+  #     FROM_EMAIL               = var.from_email
+  #   }
+  # }
+
   environment {
     variables = {
-      MAILGUN_API_KEY          = var.mailgun_api_key,
-      MAILGUN_DOMAIN           = var.mailgun_domain
-      VERIFY_EMAIL_LINK        = var.verify_email_link
-      VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
-      FROM_EMAIL               = var.from_email
+      EMAIL_SECRET_ARN = aws_secretsmanager_secret.email_service_secret.arn
     }
   }
 
@@ -664,4 +689,91 @@ resource "aws_cloudwatch_log_group" "lambda_log_group" {
 resource "aws_cloudwatch_log_stream" "lambda_log_stream" {
   name           = "${var.lambda_function_name}-stream"
   log_group_name = aws_cloudwatch_log_group.lambda_log_group.name
+}
+
+# KMS Keys for EC2 
+# resource "aws_kms_key" "kms_ec2_key" {
+#   description             = "This key is used to encrypt EC2 instances"
+#   deletion_window_in_days = 10
+#   enable_key_rotation     = true
+#   tags = {
+#     Name = "kms-key-ec2"
+#   }
+# }
+
+# KMS Key for RDS
+resource "aws_kms_key" "kms_rds_key" {
+  description             = "This key is used to encrypt RDS instances"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+  tags = {
+    Name = "kms-key-rds"
+  }
+}
+
+# KMS Key for S3 buckets
+resource "aws_kms_key" "kms_s3_key" {
+  description             = "This key is used to encrypt S3 buckets"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+  tags = {
+    Name = "kms-key-s3"
+  }
+}
+
+# KMS Key for Secrets Manager
+resource "aws_kms_key" "kms_secrets_manager_key" {
+  description             = "KMS Key for secret manager"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+  tags = {
+    Name = "kms-key-secrets-manager"
+  }
+}
+
+resource "random_pet" "secrets_suffix" {
+  length = 2
+}
+
+resource "aws_secretsmanager_secret" "rds_secret" {
+  name        = "rds-database-password"
+  kms_key_id  = aws_kms_key.kms_secrets_manager_key.arn
+  description = "Database password for RDS"
+
+  tags = {
+    Name = "rds-secret-${random_pet.secrets_suffix.id}"
+  }
+}
+
+resource "aws_secretsmanager_secret" "email_service_secret" {
+  name        = "email-service-credentials"
+  kms_key_id  = aws_kms_key.kms_secrets_manager_key.arn
+  description = "Email service credentials for Lambda function"
+
+  tags = {
+    Name = "email-service-credentials-${random_pet.secrets_suffix.id}"
+  }
+}
+
+resource "random_password" "db_password" {
+  length           = 16
+  special          = true
+  override_special = "!#$%&'()*+,-.:;<=>?[]^_{|}~"
+}
+
+resource "aws_secretsmanager_secret_version" "rds_secret_value" {
+  secret_id = aws_secretsmanager_secret.rds_secret.id
+  secret_string = jsonencode({
+    password = random_password.db_password.result
+  })
+}
+resource "aws_secretsmanager_secret_version" "email_service_secret_value" {
+  secret_id = aws_secretsmanager_secret.email_service_secret.id
+  secret_string = jsonencode({
+    apiKey                   = var.mailgun_api_key,
+    domain                   = var.mailgun_domain,
+    fromEmail                = var.from_email
+    verify_email_link        = var.verify_email_link
+    verify_email_expiry_time = var.verify_email_expiry_time
+  })
 }
