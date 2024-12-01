@@ -332,20 +332,12 @@ resource "aws_iam_policy" "cloudwatch_agent_policy" {
           "kms:Encrypt",
           "s3:PutObject",
           "s3:DeleteObject",
-          "sns:Publish"
+          "sns:Publish",
+          "secretsmanager:GetSecretValue",
+          "secretsmanager:DescribeSecret"
         ],
         Resource = "*"
       },
-      {
-        Effect   = "Allow",
-        Action   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"],
-        Resource = aws_secretsmanager_secret.rds_secret.arn
-      },
-      {
-        Effect   = "Allow",
-        Action   = ["kms:Decrypt"],
-        Resource = aws_kms_key.kms_secrets_manager_key.arn
-      }
     ]
   })
 }
@@ -428,6 +420,7 @@ resource "aws_launch_template" "csye6225_asg" {
     S3_BUCKET_NAME        = aws_s3_bucket.bucket.bucket
     SNS_TOPIC_ARN         = aws_sns_topic.user_verification_topic.arn
     TOKEN_EXPIRATION_TIME = var.token_expiry_time
+    RDS_SECRET_NAME       = aws_secretsmanager_secret.rds_secret.name
   }))
 
   monitoring {
@@ -449,6 +442,7 @@ resource "aws_launch_template" "csye6225_asg" {
       Name = "webapp-ec2-instance"
     }
   }
+  depends_on = [aws_secretsmanager_secret.rds_secret]
 }
 
 # Auto Scaling Group
@@ -620,6 +614,11 @@ resource "aws_iam_policy" "lambda_policy" {
           "secretsmanager:GetSecretValue",
           "secretsmanager:DescribeSecret"
         ], Resource : aws_secretsmanager_secret.email_service_secret.arn
+      },
+      {
+        Effect   = "Allow",
+        Action   = ["kms:Decrypt"],
+        Resource = aws_kms_key.kms_secrets_manager_key.arn
       }
     ]
   })
@@ -641,23 +640,16 @@ resource "aws_lambda_function" "user_verification_lambda" {
   memory_size   = 128
   timeout       = 30
 
-  # environment {
-  #   variables = {
-  #     MAILGUN_API_KEY          = var.mailgun_api_key,
-  #     MAILGUN_DOMAIN           = var.mailgun_domain
-  #     VERIFY_EMAIL_LINK        = var.verify_email_link
-  #     VERIFY_EMAIL_EXPIRY_TIME = var.verify_email_expiry_time
-  #     FROM_EMAIL               = var.from_email
-  #   }
-  # }
-
   environment {
     variables = {
       EMAIL_SECRET_ARN = aws_secretsmanager_secret.email_service_secret.arn
     }
   }
 
-  depends_on = [aws_cloudwatch_log_group.lambda_log_group]
+  depends_on = [aws_cloudwatch_log_group.lambda_log_group,
+    aws_secretsmanager_secret.email_service_secret,
+    aws_secretsmanager_secret_version.email_service_secret_value
+  ]
 }
 
 resource "aws_sns_topic_subscription" "lambda_sns_subscription" {
@@ -690,16 +682,6 @@ resource "aws_cloudwatch_log_stream" "lambda_log_stream" {
   name           = "${var.lambda_function_name}-stream"
   log_group_name = aws_cloudwatch_log_group.lambda_log_group.name
 }
-
-# KMS Keys for EC2 
-# resource "aws_kms_key" "kms_ec2_key" {
-#   description             = "This key is used to encrypt EC2 instances"
-#   deletion_window_in_days = 10
-#   enable_key_rotation     = true
-#   tags = {
-#     Name = "kms-key-ec2"
-#   }
-# }
 
 # KMS Key for RDS
 resource "aws_kms_key" "kms_rds_key" {
@@ -736,7 +718,7 @@ resource "random_pet" "secrets_suffix" {
 }
 
 resource "aws_secretsmanager_secret" "rds_secret" {
-  name        = "rds-database-password"
+  name        = "rds-database-password-${random_pet.secrets_suffix.id}"
   kms_key_id  = aws_kms_key.kms_secrets_manager_key.arn
   description = "Database password for RDS"
 
@@ -746,7 +728,7 @@ resource "aws_secretsmanager_secret" "rds_secret" {
 }
 
 resource "aws_secretsmanager_secret" "email_service_secret" {
-  name        = "email-service-credentials"
+  name        = "email-service-credentials-${random_pet.secrets_suffix.id}"
   kms_key_id  = aws_kms_key.kms_secrets_manager_key.arn
   description = "Email service credentials for Lambda function"
 
@@ -772,8 +754,8 @@ resource "aws_secretsmanager_secret_version" "email_service_secret_value" {
   secret_string = jsonencode({
     apiKey                   = var.mailgun_api_key,
     domain                   = var.mailgun_domain,
-    fromEmail                = var.from_email
-    verify_email_link        = var.verify_email_link
+    fromEmail                = var.from_email,
+    verify_email_link        = var.verify_email_link,
     verify_email_expiry_time = var.verify_email_expiry_time
   })
 }

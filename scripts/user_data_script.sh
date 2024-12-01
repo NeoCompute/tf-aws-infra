@@ -12,26 +12,18 @@ sudo ./aws/install
 
 aws --version
 
-# RDS_SECRET=$(aws secretsmanager get-secret-value --secret-id rds-database-password --query SecretString --output text 2>&1 | tee -a /var/log/syslog)
-# if [ $? -ne 0 ]; then
-#   echo "Error fetching RDS secret" >> /var/log/syslog
-#   exit 1
-# fi
-
-RDS_SECRET=$(aws secretsmanager get-secret-value --secret-id rds-database-password-x --query SecretString --output text)
+RDS_SECRET=$(aws secretsmanager get-secret-value --secret-id "${RDS_SECRET_NAME}" --query SecretString --output text)
 if [ $? -ne 0 ]; then
   echo "Error fetching RDS secret" >> /var/log/syslog
   exit 1
 fi
 
 
-# DB_PASSWORD_FETCHED=$(echo "$RDS_SECRET" | jq -r '.password' 2>&1 | tee -a /var/log/syslog)
-# if [ -z "$DB_PASSWORD_FETCHED" ]; then
-#   echo "Error extracting DB password from secret" >> /var/log/syslog
-#   exit 1
-# fi
-
-DB_PASSWORD_FETCHED="$RDS_SECRET"
+DB_PASSWORD_FETCHED=$(echo "$RDS_SECRET" | jq -r '.password')
+if [ -z "$DB_PASSWORD_FETCHED" ]; then
+  echo "Error extracting DB password from secret" >> /var/log/syslog
+  exit 1
+fi
 
 DB_HOST=${DB_HOST}
 DB_USER=${DB_USER}
