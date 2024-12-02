@@ -3,9 +3,30 @@
 exec > /tmp/update_env.log 2>&1
 set -e
 
+sudo apt-get update -y
+sudo apt-get install -y jq
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+aws --version
+
+RDS_SECRET=$(aws secretsmanager get-secret-value --secret-id "${RDS_SECRET_NAME}" --query SecretString --output text)
+if [ $? -ne 0 ]; then
+  echo "Error fetching RDS secret" >> /var/log/syslog
+  exit 1
+fi
+
+
+DB_PASSWORD_FETCHED=$(echo "$RDS_SECRET" | jq -r '.password')
+if [ -z "$DB_PASSWORD_FETCHED" ]; then
+  echo "Error extracting DB password from secret" >> /var/log/syslog
+  exit 1
+fi
+
 DB_HOST=${DB_HOST}
 DB_USER=${DB_USER}
-DB_PASSWORD=${DB_PASSWORD}
 DB_NAME=${DB_NAME}
 APP_PORT=${APP_PORT}
 ENVIRONMENT=${ENVIRONMENT}
@@ -16,7 +37,6 @@ TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}
 
 echo "DB_HOST=${DB_HOST}"
 echo "DB_USER=${DB_USER}"
-echo "DB_PASSWORD=${DB_PASSWORD}"
 echo "DB_DATABASE=${DB_NAME}"
 echo "PORT=${APP_PORT}"
 echo "ENVIRONMENT=${ENVIRONMENT}"
@@ -27,7 +47,7 @@ echo "TOKEN_EXPIRATION_TIME=${TOKEN_EXPIRATION_TIME}"
 
 sudo -u csye6225 bash -c "sed -i '/^DB_HOST=/d' /home/csye6225/webapp/.env && echo \"DB_HOST=${DB_HOST}\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^DB_USER=/d' /home/csye6225/webapp/.env && echo \"DB_USER=${DB_USER}\" >> /home/csye6225/webapp/.env"
-sudo -u csye6225 bash -c "sed -i '/^DB_PASSWORD=/d' /home/csye6225/webapp/.env && echo \"DB_PASSWORD=${DB_PASSWORD}\" >> /home/csye6225/webapp/.env"
+sudo -u csye6225 bash -c "sed -i '/^DB_PASSWORD=/d' /home/csye6225/webapp/.env && echo \"DB_PASSWORD=$DB_PASSWORD_FETCHED\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^DB_DATABASE=/d' /home/csye6225/webapp/.env && echo \"DB_DATABASE=${DB_NAME}\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^DB_PORT=/d' /home/csye6225/webapp/.env && echo \"DB_PORT=5432\" >> /home/csye6225/webapp/.env"
 sudo -u csye6225 bash -c "sed -i '/^PORT=/d' /home/csye6225/webapp/.env && echo \"PORT=${APP_PORT}\" >> /home/csye6225/webapp/.env"
