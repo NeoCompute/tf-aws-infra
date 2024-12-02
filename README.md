@@ -52,6 +52,17 @@ terraform validate
 terraform apply
 ```
 
+5. Command to import the SSL Certificates
+
+```
+aws acm import-certificate \
+  --certificate file://<path> \
+  --certificate-chain file://<path> \
+  --private-key file://<path> \
+  --region us-east-1 \
+  --profile demo
+```
+
 ## References:
 1. [Install Brew](https://brew.sh/)
 2. [Install Terraform using Brew](https://developer.hashicorp.com/terraform/tutorials/aws-get-started/install-cli)

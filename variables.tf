@@ -138,5 +138,5 @@ variable "host_environment" {
 variable "demo_certificate_arn" {
   description = "Certificate ARN for the demo environment"
   type        = string
-  default     = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  default     = "arn:aws:acm:us-east-1:396608768117:certificate/3a0725d1-693e-4537-ad0c-24c027ba7823"
 }
