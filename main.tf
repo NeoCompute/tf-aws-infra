@@ -430,19 +430,10 @@ resource "aws_launch_template" "csye6225_asg" {
       volume_size           = var.root_volume_size
       volume_type           = "gp3"
       delete_on_termination = true
+      encrypted             = true
+      kms_key_id            = aws_kms_key.kms_ec2_key.arn
     }
   }
-
-  # block_device_mappings {
-  #   device_name = "/dev/sda1"
-  #   ebs {
-  #     volume_size           = var.root_volume_size
-  #     delete_on_termination = true
-  #     encrypted             = true
-  #     kms_key_id            = aws_kms_key.kms_ec2_key.arn
-  #   }
-  # }
-
   tag_specifications {
     resource_type = "instance"
     tags = {
@@ -564,18 +555,6 @@ locals {
   certificate_arn = var.host_environment == "demo" ? var.demo_certificate_arn : aws_acm_certificate.dev_certificate.arn
 }
 
-# ALB Listener
-# resource "aws_lb_listener" "app_http_listener" {
-#   load_balancer_arn = aws_lb.app_load_balancer.arn
-#   port              = 80
-#   protocol          = "HTTP"
-
-#   default_action {
-#     type             = "forward"
-#     target_group_arn = aws_lb_target_group.app_target_group.arn
-#   }
-# }
-
 resource "aws_lb_listener" "app_listener" {
   load_balancer_arn = aws_lb.app_load_balancer.arn
   port              = 443
@@ -587,7 +566,6 @@ resource "aws_lb_listener" "app_listener" {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app_target_group.arn
   }
-
 }
 
 # Create a SNS Topic
@@ -708,6 +686,8 @@ resource "aws_cloudwatch_log_stream" "lambda_log_stream" {
   log_group_name = aws_cloudwatch_log_group.lambda_log_group.name
 }
 
+
+
 # KMS Key for EC2 Instances
 resource "aws_kms_key" "kms_ec2_key" {
   description             = "This key is used to encrypt EC2 instances"
@@ -716,6 +696,60 @@ resource "aws_kms_key" "kms_ec2_key" {
   tags = {
     Name = "kms-key-ec2"
   }
+}
+
+data "aws_caller_identity" "current" {}
+
+resource "aws_kms_key_policy" "kms_ec2_key_policy" {
+  key_id = aws_kms_key.kms_ec2_key.key_id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Id      = "kms-key-policy",
+    Statement = [
+      {
+        Sid    = "EnableAccountAccess",
+        Effect = "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        },
+        Action   = "kms:*",
+        Resource = "*"
+      },
+      {
+        Sid    = "AllowEC2RoleAccess",
+        Effect = "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${aws_iam_role.cloudwatch_agent_role.name}"
+        },
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey",
+          "kms:CreateGrant"
+        ],
+        Resource = aws_kms_key.kms_ec2_key.arn
+      },
+      {
+        Sid    = "AllowAutoScalingServiceAccess",
+        Effect = "Allow",
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+        },
+        Action = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey",
+          "kms:CreateGrant"
+        ],
+        Resource = aws_kms_key.kms_ec2_key.arn
+      }
+    ]
+  })
 }
 
 # KMS Key for RDS
