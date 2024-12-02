@@ -128,3 +128,15 @@ variable "token_expiry_time" {
   type        = number
   default     = 2
 }
+
+variable "host_environment" {
+  description = "Environment for the host"
+  type        = string
+  default     = "dev"
+}
+
+variable "demo_certificate_arn" {
+  description = "Certificate ARN for the demo environment"
+  type        = string
+  default     = "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}

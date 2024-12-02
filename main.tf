@@ -84,17 +84,18 @@ resource "aws_route_table_association" "private_associations" {
 resource "aws_security_group" "application-security-group" {
   vpc_id = aws_vpc.vpc-01.id
 
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  # ingress {
+  #   from_port   = 22
+  #   to_port     = 22
+  #   protocol    = "tcp"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
   ingress {
     from_port       = var.application_port
     to_port         = var.application_port
     protocol        = "tcp"
     security_groups = [aws_security_group.load_balancer_security_group.id]
+    description     = "Allow traffic from load balancer to EC2 instances on application port"
   }
 
   egress {
@@ -102,6 +103,7 @@ resource "aws_security_group" "application-security-group" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
   }
 
   tags = {
@@ -227,11 +229,6 @@ resource "aws_iam_role_policy_attachment" "s3_policy_attachment" {
   role       = aws_iam_role.s3_access_role.name
   policy_arn = aws_iam_policy.s3_bucket_policy.arn
 } // creating IAM Role and attaching the policy
-
-# resource "aws_kms_key" "kms_key" {
-#   description             = "This key is used to encrypt bucket objects"
-#   deletion_window_in_days = 10
-# }
 
 resource "aws_s3_bucket" "bucket" {
   bucket        = random_uuid.bucket_name.result
@@ -436,6 +433,16 @@ resource "aws_launch_template" "csye6225_asg" {
     }
   }
 
+  # block_device_mappings {
+  #   device_name = "/dev/sda1"
+  #   ebs {
+  #     volume_size           = var.root_volume_size
+  #     delete_on_termination = true
+  #     encrypted             = true
+  #     kms_key_id            = aws_kms_key.kms_ec2_key.arn
+  #   }
+  # }
+
   tag_specifications {
     resource_type = "instance"
     tags = {
@@ -553,16 +560,34 @@ resource "aws_lb_target_group" "app_target_group" {
   }
 }
 
+locals {
+  certificate_arn = var.host_environment == "demo" ? var.demo_certificate_arn : aws_acm_certificate.dev_certificate.arn
+}
+
 # ALB Listener
+# resource "aws_lb_listener" "app_http_listener" {
+#   load_balancer_arn = aws_lb.app_load_balancer.arn
+#   port              = 80
+#   protocol          = "HTTP"
+
+#   default_action {
+#     type             = "forward"
+#     target_group_arn = aws_lb_target_group.app_target_group.arn
+#   }
+# }
+
 resource "aws_lb_listener" "app_listener" {
   load_balancer_arn = aws_lb.app_load_balancer.arn
-  port              = 80
-  protocol          = "HTTP"
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = local.certificate_arn
 
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.app_target_group.arn
   }
+
 }
 
 # Create a SNS Topic
@@ -683,6 +708,16 @@ resource "aws_cloudwatch_log_stream" "lambda_log_stream" {
   log_group_name = aws_cloudwatch_log_group.lambda_log_group.name
 }
 
+# KMS Key for EC2 Instances
+resource "aws_kms_key" "kms_ec2_key" {
+  description             = "This key is used to encrypt EC2 instances"
+  deletion_window_in_days = 10
+  enable_key_rotation     = true
+  tags = {
+    Name = "kms-key-ec2"
+  }
+}
+
 # KMS Key for RDS
 resource "aws_kms_key" "kms_rds_key" {
   description             = "This key is used to encrypt RDS instances"
@@ -758,4 +793,34 @@ resource "aws_secretsmanager_secret_version" "email_service_secret_value" {
     verify_email_link        = var.verify_email_link,
     verify_email_expiry_time = var.verify_email_expiry_time
   })
+}
+
+resource "aws_acm_certificate" "dev_certificate" {
+  domain_name       = var.subdomain_name
+  validation_method = "DNS"
+  tags = {
+    Name = "dev-ssl-certificate"
+  }
+}
+
+resource "aws_route53_record" "dev_cert_validation_record" {
+  zone_id = var.hosted_zone_id
+  for_each = {
+    for dvo in aws_acm_certificate.dev_certificate.domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      record = dvo.resource_record_value
+      type   = dvo.resource_record_type
+    }
+  }
+
+  allow_overwrite = true
+  name            = each.value.name
+  records         = [each.value.record]
+  type            = each.value.type
+  ttl             = 60
+}
+
+resource "aws_acm_certificate_validation" "dev_cert_validation" {
+  certificate_arn         = aws_acm_certificate.dev_certificate.arn
+  validation_record_fqdns = [for record in aws_route53_record.dev_cert_validation_record : record.fqdn]
 }
